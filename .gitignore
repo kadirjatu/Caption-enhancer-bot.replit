@@ -1,0 +1,39 @@
+# Results & temp files
+results/
+*.mp4
+*.wav
+
+# Large attached assets
+attached_assets/
+
+# Real-ESRGAN sample data (large binary files)
+Real-ESRGAN/inputs/
+Real-ESRGAN/assets/teaser*
+Real-ESRGAN/tests/data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Env
+.env
+*.env
+
+# Models (large)
+*.pth
+*.onnx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+tmp/
+*.tmp
