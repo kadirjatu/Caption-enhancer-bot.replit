@@ -16,7 +16,7 @@ WORKDIR /app
 # Copy requirements first (layer cache)
 COPY requirements.txt .
 
-# Install Python packages (deduplicated)
+# Step 1: Install most packages (faster-whisper pulls CUDA deps)
 RUN pip install --no-cache-dir \
     python-dotenv \
     pyTelegramBotAPI \
@@ -28,11 +28,13 @@ RUN pip install --no-cache-dir \
     flask \
     aiofiles \
     opencv-python-headless \
-    Pillow \
-    basicsr \
-    facexlib \
-    gfpgan \
-    realesrgan
+    Pillow
+
+# Step 2: Install basicsr with PEP 517 to avoid legacy setup.py CUDA conflict
+RUN pip install --no-cache-dir --use-pep517 basicsr
+
+# Step 3: Install packages that depend on basicsr
+RUN pip install --no-cache-dir facexlib gfpgan realesrgan
 
 # Copy all project files
 COPY . .
