@@ -398,7 +398,7 @@ def api_subtitle():
             subprocess.run([
                 'ffmpeg', '-y', '-i', video_path,
                 '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', audio_path
-            ], check=True, capture_output=True)
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             # Step 2: Transcribe
             _update_job(jid, '🧠 AI speech-to-text chal raha hai...', 20, eta_total - 15)
@@ -422,6 +422,10 @@ def api_subtitle():
                 # Update progress gradually during transcription
                 pct = min(55, 20 + len(segments))
                 _update_job(jid, f'🧠 Transcribing... ({len(segments)} segments)', pct, max(30, eta_total - 30 - len(segments)*2))
+
+            # Free Whisper model memory before heavy ffmpeg step
+            del fw_model
+            import gc; gc.collect()
 
             if not segments:
                 _bot.send_message(chat_id, '❌ Video mein koi speech nahi mili.')
@@ -459,8 +463,9 @@ def api_subtitle():
             subprocess.run([
                 'ffmpeg', '-y', '-i', video_path,
                 '-vf', f'ass={ass_path}:fontsdir={fonts_dir}',
-                '-c:a', 'copy', output_path
-            ], check=True, capture_output=True)
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                '-threads', '2', '-c:a', 'copy', output_path
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             # Step 7: Send
             _update_job(jid, '📤 Bot pe bhej raha hoon...', 92, 10)
@@ -468,10 +473,9 @@ def api_subtitle():
             send_path = _fns['compress'](output_path)
             preview = ' '.join(s['text'] for s in segments)[:300]
             with open(send_path, 'rb') as f:
-                video_bytes = f.read()
-            _bot.send_video(chat_id, ('output_subtitled.mp4', video_bytes),
-                caption=f'✅ <b>Subtitles Ready!</b>\n\n🎨 Style: <b>{style_key.title()}</b>\n🗣️ Lang: <b>{lang_label}</b>\n\n📝 <i>{preview}...</i>',
-                parse_mode='HTML', supports_streaming=True)
+                _bot.send_video(chat_id, f,
+                    caption=f'✅ <b>Subtitles Ready!</b>\n\n🎨 Style: <b>{style_key.title()}</b>\n🗣️ Lang: <b>{lang_label}</b>\n\n📝 <i>{preview}...</i>',
+                    parse_mode='HTML', supports_streaming=True)
             _finish_job(jid, output_path=send_path)
 
         except Exception as e:
