@@ -5,10 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgl1 \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    git \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,7 +12,7 @@ WORKDIR /app
 # Copy requirements first (layer cache)
 COPY requirements.txt .
 
-# Step 1: Install most packages (faster-whisper pulls CUDA deps)
+# Install core dependencies for the Telegram bot
 RUN pip install --no-cache-dir \
     python-dotenv \
     pyTelegramBotAPI \
@@ -29,12 +25,6 @@ RUN pip install --no-cache-dir \
     aiofiles \
     opencv-python-headless \
     Pillow
-
-# Step 2: Install basicsr with PEP 517 to avoid legacy setup.py CUDA conflict
-RUN pip install --no-cache-dir --use-pep517 basicsr
-
-# Step 3: Install packages that depend on basicsr
-RUN pip install --no-cache-dir facexlib gfpgan realesrgan
 
 # Copy all project files
 COPY . .
