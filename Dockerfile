@@ -46,4 +46,4 @@ RUN mkdir -p results tmp
 EXPOSE 5000
 
 # Start bot (which also starts Flask webapp internally)
-CMD ["python", "bot.py"]
+CMD ["python", "-u", "bot.py"]
