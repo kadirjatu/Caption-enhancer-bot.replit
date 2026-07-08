@@ -12,7 +12,7 @@ WORKDIR /app
 # Copy requirements first (layer cache)
 COPY requirements.txt .
 
-# Install core dependencies for the Telegram bot
+# Install Python packages (deduplicated)
 RUN pip install --no-cache-dir \
     python-dotenv \
     pyTelegramBotAPI \
@@ -24,7 +24,12 @@ RUN pip install --no-cache-dir \
     flask \
     aiofiles \
     opencv-python-headless \
-    Pillow
+    Pillow \
+    basicsr \
+    facexlib \
+    gfpgan \
+    realesrgan
+
 
 # Copy all project files
 COPY . .
