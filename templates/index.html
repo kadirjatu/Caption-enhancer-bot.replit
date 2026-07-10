@@ -157,6 +157,21 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .lb-badge{font-size:18px;flex-shrink:0}
 .lb-my-rank{background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid var(--accent)60;border-radius:12px;padding:12px 16px;text-align:center;font-size:13px;font-weight:700;color:var(--accent);margin-top:4px;margin-bottom:8px}
 .lb-reset{text-align:center;font-size:11px;color:var(--sub);margin-top:6px}
+
+/* ── AI Chat Page ── */
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 170px)}
+.chat-messages{flex:1;overflow-y:auto;padding:4px 2px 12px;display:flex;flex-direction:column;gap:10px}
+.chat-bubble{max-width:82%;padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.chat-bubble-user{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-bottom-right-radius:4px}
+.chat-bubble-ai{align-self:flex-start;background:var(--card2);color:var(--text);border:1px solid #ffffff10;border-bottom-left-radius:4px}
+.chat-bubble-ai.typing{color:var(--sub);font-style:italic}
+.chat-input-row{display:flex;gap:8px;padding-top:10px;border-top:1px solid #ffffff08}
+.chat-input{flex:1;background:var(--card2);border:1px solid #ffffff15;border-radius:20px;padding:11px 16px;color:var(--text);font-size:14px;outline:none}
+.chat-input::placeholder{color:var(--sub)}
+.chat-input:focus{border-color:var(--accent)}
+.chat-send{background:var(--accent);color:#fff;border:none;border-radius:50%;width:44px;height:44px;flex-shrink:0;font-size:18px;cursor:pointer;transition:.15s}
+.chat-send:active{transform:scale(.92)}
+.chat-send:disabled{opacity:.5;pointer-events:none}
 </style>
 </head>
 <body>
@@ -183,6 +198,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 <div class="tabs">
   <div class="tab active" onclick="showPage('home')">🏠 Home</div>
+  <div class="tab" onclick="showPage('ai-chat')">💬 AI Chat</div>
   <div class="tab" onclick="showPage('search')">🔍 Movies</div>
   <div class="tab" onclick="showPage('subtitle')">🎬 Subtitles</div>
   <div class="tab" onclick="showPage('enhance-video')">⚡ Video AI</div>
@@ -204,14 +220,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     <div class="feat-card" onclick="showPage('enhance-video')"><div class="feat-icon">⚡</div><div class="feat-name">Video Enhance</div><div class="feat-desc">720p → 4K AI upscaling</div></div>
     <div class="feat-card" onclick="showPage('enhance-image')"><div class="feat-icon">✨</div><div class="feat-name">Image Enhance</div><div class="feat-desc">Real-ESRGAN 2x / 4x boost</div></div>
   </div>
-  <div class="card" style="border-color:#27ae6030">
-    <div class="card-title">📌 Mini App ka faida</div>
-    <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-top:4px">
-      ✅ <b style="color:var(--text)">1GB+ videos</b> seedha upload karo<br>
-      ✅ Telegram ka <b style="color:var(--text)">20MB limit bypass</b><br>
-      ✅ <b style="color:var(--text)">Real-time progress</b> + ETA dikhai deta hai<br>
-      🎁 Daily login pe <b style="color:#f39c12">+3 free Credits</b> milte hain
-    </div>
+  <div class="card" style="border-color:#5b6cf930;cursor:pointer" onclick="showPage('ai-chat')">
+    <div class="card-title">💬 Chat with AI</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:2px">Apna sawal poocho, AI Assistant se seedha baat karo</div>
   </div>
   <div class="card" id="referral-card" style="border-color:#f39c1230;display:none">
     <div class="card-title">🎁 Dosto ko Invite karo — Rewards Kamao!</div>
@@ -465,6 +476,19 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   </div>
 </div>
 
+<!-- AI CHAT PAGE -->
+<div class="page" id="page-ai-chat">
+  <div class="chat-wrap">
+    <div class="chat-messages" id="ai-chat-messages">
+      <div class="chat-bubble chat-bubble-ai">👋 Namaste! Main tera AI Assistant hoon. Kuch bhi pooch sakte ho.</div>
+    </div>
+    <div class="chat-input-row">
+      <input class="chat-input" id="ai-chat-input" placeholder="Apna message likho..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();sendAIMessage();}"/>
+      <button class="chat-send" id="ai-chat-send" onclick="sendAIMessage()">➤</button>
+    </div>
+  </div>
+</div>
+
 <!-- LEADERBOARD PAGE -->
 <div class="page" id="page-leaderboard">
   <div style="margin-top:4px">
@@ -521,7 +545,9 @@ const state = {
   adToken: null, adTimerInterval: null, adSecsLeft: 30, adUrl: '#', jobUrls: {},
   adCooldownEnds: 0, adCooldownInterval: null,
   // active poll intervals per prefix — ensures only one polling loop runs per job type
-  pollIntervals: {}
+  pollIntervals: {},
+  // AI chat conversation history (role/content pairs), sent to /api/ai-chat for context
+  aiHistory: []
 };
 
 // ── Credits System ──
@@ -833,9 +859,71 @@ function showPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
-  ['home','search','subtitle','enhance-video','enhance-image','history','profile','leaderboard'].forEach((n,i)=>{
+  ['home','ai-chat','search','subtitle','enhance-video','enhance-image','history','profile','leaderboard'].forEach((n,i)=>{
     if(n===id) document.querySelectorAll('.tab')[i]?.classList.add('active');
   });
+}
+
+// ── AI Chat ──
+function appendChatBubble(role, text, isTyping){
+  const wrap = document.getElementById('ai-chat-messages');
+  const el = document.createElement('div');
+  el.className = 'chat-bubble ' + (role==='user' ? 'chat-bubble-user' : 'chat-bubble-ai') + (isTyping ? ' typing' : '');
+  if(isTyping) el.id = 'ai-typing-bubble';
+  el.textContent = text;
+  wrap.appendChild(el);
+  wrap.scrollTop = wrap.scrollHeight;
+  return el;
+}
+function removeTypingBubble(){
+  const el = document.getElementById('ai-typing-bubble');
+  if(el) el.remove();
+}
+function trimChatBubbles(){
+  const wrap = document.getElementById('ai-chat-messages');
+  const MAX_BUBBLES = 60;
+  while(wrap.children.length > MAX_BUBBLES){
+    wrap.removeChild(wrap.firstChild);
+  }
+}
+async function sendAIMessage(){
+  const input = document.getElementById('ai-chat-input');
+  const text  = input.value.trim();
+  if(!text) return;
+  if(!user){ toast('⚠️ User identify nahi ho paya'); return; }
+
+  const historyPayload = state.aiHistory.slice(-20);
+  appendChatBubble('user', text);
+  state.aiHistory.push({role:'user', content:text});
+  if(state.aiHistory.length > 40) state.aiHistory = state.aiHistory.slice(-40);
+  trimChatBubbles();
+  input.value = '';
+
+  const sendBtn = document.getElementById('ai-chat-send');
+  sendBtn.disabled = true;
+  appendChatBubble('ai', '⏳ Soch raha hoon...', true);
+
+  try{
+    const fd = new FormData();
+    fd.append('init_data', initData);
+    fd.append('message', text);
+    fd.append('history', JSON.stringify(historyPayload));
+    const res = await fetch('/api/ai-chat', {method:'POST', body:fd});
+    const d   = await res.json();
+    removeTypingBubble();
+    if(d.ok){
+      appendChatBubble('ai', d.reply);
+      state.aiHistory.push({role:'assistant', content:d.reply});
+      if(state.aiHistory.length > 40) state.aiHistory = state.aiHistory.slice(-40);
+      trimChatBubbles();
+    } else {
+      appendChatBubble('ai', '❌ ' + (d.error || 'Kuch galat ho gaya'));
+    }
+  }catch(e){
+    removeTypingBubble();
+    appendChatBubble('ai', '❌ Network error, dobara try karo');
+  }
+  sendBtn.disabled = false;
 }
 
 function toast(msg,ms=3000){
