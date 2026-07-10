@@ -1,9 +1,6 @@
 aiofiles
-basicsr
-facexlib
 faster-whisper
 flask
-gfpgan
 google-api-python-client
 google-auth
 google-genai
@@ -11,8 +8,44 @@ opencv-python-headless
 Pillow
 pyTelegramBotAPI
 python-dotenv
-realesrgan
+requests
+# The following are installed manually (CPU-only torch, --no-build-isolation) — see replit.md
+# basicsr
+# facexlib
+# gfpgan
+# realesrgan
+# torch
+# torchvision
+# sift-stack-py (unused, not imported anywhere)
+aiofiles
+faster-whisper
+flask
+google-api-python-client
+google-auth
+google-genai
+opencv-python-headless
+pyTelegramBotAPI
+python-dotenv
 requests
 sift-stack-py
-torch
-torchvision
+aiofiles
+faster-whisper
+flask
+google-api-python-client
+google-auth
+google-genai
+opencv-python-headless
+pyTelegramBotAPI
+python-dotenv
+requests
+aiofiles
+faster-whisper
+flask
+google-api-python-client
+google-auth
+google-genai
+opencv-python-headless
+Pillow
+pyTelegramBotAPI
+python-dotenv
+requests
