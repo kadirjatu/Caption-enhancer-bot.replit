@@ -1,0 +1,1 @@
+- [CPU-only torch on Replit](torch-cpu-only.md) — default torch pip install pulls CUDA build that blows the container disk quota; use the CPU wheel index instead.
