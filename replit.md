@@ -7,6 +7,7 @@ A Telegram bot (`bot.py`, using `pyTelegramBotAPI`) with:
 - Local AI image/video upscaling (Real-ESRGAN / GFPGAN, CPU-only torch)
 - A credit/referral system (`credits.py`, `referral.py`, backed by `users.json` + optional Google Sheets)
 - A companion Flask "Mini App" web UI (`webapp.py`), served on port 5000 and started automatically by `bot.py`
+- A reusable, provider-independent AI client (`config.py` + `ai_client.py`) for OpenAI-compatible chat completions (OpenRouter, HuggingFace Router, vLLM, RunPod, Ollama, etc.). Not yet wired into any Telegram handler — call `generate_ai_response(user_message, history, system_prompt)` from `ai_client.py` wherever AI replies are needed. Switching providers/models only requires changing `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` in `.env` — no code changes. If `AI_BASE_URL` or `AI_MODEL` is unset, it returns a friendly "not configured yet" message instead of making any request.
 
 ## Running the project
 Two workflows run in parallel:
