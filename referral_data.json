@@ -1,5 +1,18 @@
 {
-  "users": {},
+  "users": {
+    "8502274235": {
+      "name": "Kashif",
+      "join_date": 1783677520.7546601,
+      "referrer_id": null,
+      "referred_users": [],
+      "lifetime_referrals": 0,
+      "weekly_referrals": 0,
+      "monthly_referrals": 0,
+      "future_credits": 0,
+      "rewards": {},
+      "banned": false
+    }
+  },
   "meta": {
     "weekly_start": 1783675875.866791,
     "monthly_start": 1783675875.866791,

@@ -19,6 +19,8 @@ from credits import (
     BETA_MODE, CREDITS_ENABLED,
 )
 import referral as referral_sys
+import asyncio
+from ai_client import generate_ai_response
 CREDITS_PER_AD  = 3          # credits per ad watched
 AD_WATCH_SECS   = 30         # minimum seconds user must watch
 AD_COOLDOWN_SECS = 120       # seconds between back-to-back ad claims
@@ -648,3 +650,35 @@ def api_enhance_image():
     threading.Thread(target=process, daemon=True).start()
     return jsonify({'ok': True, 'job_id': jid, 'eta_sec': 120,
                     'message': 'Enhancement shuru! Bot pe result aayega.'})
+
+
+@app.route('/api/ai-chat', methods=['POST'])
+def api_ai_chat():
+    """Mini App AI chat endpoint — thin wrapper around the shared, reusable
+    generate_ai_response() from ai_client.py. No AI logic lives here."""
+    user = _parse_user_from_form(request)
+    user_id = user.get('id')
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'Not identified'}), 400
+
+    message = (request.form.get('message', '') or '').strip()
+    if not message:
+        return jsonify({'ok': False, 'error': 'Empty message'}), 400
+
+    history_raw = request.form.get('history', '')
+    history = None
+    if history_raw:
+        try:
+            parsed = json.loads(history_raw)
+            if isinstance(parsed, list):
+                history = parsed
+        except Exception:
+            history = None
+
+    try:
+        reply = asyncio.run(generate_ai_response(user_message=message, history=history))
+    except Exception as e:
+        logging.error(f'WebApp ai-chat error: {e}')
+        return jsonify({'ok': False, 'error': 'AI Assistant temporarily unavailable'}), 500
+
+    return jsonify({'ok': True, 'reply': reply})

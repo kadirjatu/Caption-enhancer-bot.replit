@@ -1,1 +1,2 @@
 - [CPU-only torch on Replit](torch-cpu-only.md) — default torch pip install pulls CUDA build that blows the container disk quota; use the CPU wheel index instead.
+- [httpx client across mixed event loops](httpx-asyncio-run-mixing.md) — don't cache a global httpx.AsyncClient if a module is called both from a long-running loop and per-call asyncio.run().

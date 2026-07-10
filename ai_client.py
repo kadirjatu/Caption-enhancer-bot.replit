@@ -47,21 +47,21 @@ RATE_LIMIT_MESSAGE = (
     "⏳ AI Assistant is a bit busy right now. Please try again shortly."
 )
 
-# Reused across calls for connection pooling. Created lazily so importing
-# this module never opens a socket or requires AI_* env vars to be set.
-_client: Optional[httpx.AsyncClient] = None
-_client_lock = asyncio.Lock()
-
-
-async def _get_http_client(timeout: float) -> httpx.AsyncClient:
-    global _client
-    async with _client_lock:
-        if _client is None or _client.is_closed:
-            _client = httpx.AsyncClient(
-                timeout=httpx.Timeout(timeout),
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-            )
-        return _client
+# NOTE on client lifetime: callers may invoke generate_ai_response() from
+# different event loops (e.g. bot.py's long-running polling loop vs. a
+# Flask route that uses asyncio.run() per request, which spins up a brand
+# new loop each time). An httpx.AsyncClient is bound to the loop it was
+# created on, so a client cannot be safely cached globally and reused
+# across arbitrary loops. Instead, each generate_ai_response() call opens
+# one client for the duration of that call (pooled across its own retry
+# attempts) and closes it when done — simple and correct across any
+# caller's event-loop setup, at the cost of not pooling connections
+# *between* separate calls.
+def _new_http_client(timeout: float) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
 
 
 def _build_messages(
@@ -131,101 +131,100 @@ async def generate_ai_response(
         "max_tokens": config.max_tokens,
     }
 
-    client = await _get_http_client(config.timeout)
-
     last_error_message = GENERIC_ERROR_MESSAGE
     attempts = max(1, config.max_retries)
 
-    for attempt in range(1, attempts + 1):
-        start = time.monotonic()
-        try:
-            response = await client.post(url, headers=headers, json=body)
-            latency_ms = round((time.monotonic() - start) * 1000)
-            status = response.status_code
+    async with _new_http_client(config.timeout) as client:
+        for attempt in range(1, attempts + 1):
+            start = time.monotonic()
+            try:
+                response = await client.post(url, headers=headers, json=body)
+                latency_ms = round((time.monotonic() - start) * 1000)
+                status = response.status_code
 
-            if status == 200:
-                try:
-                    payload = response.json()
-                except ValueError:
+                if status == 200:
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        logger.error(
+                            "AI response was not valid JSON (provider=%s model=%s status=%s)",
+                            config.provider, config.model, status,
+                        )
+                        return GENERIC_ERROR_MESSAGE
+
+                    reply = _extract_reply_text(payload)
+                    usage = payload.get("usage") or {}
+                    logger.info(
+                        "AI request ok (provider=%s model=%s status=%s latency_ms=%s tokens=%s)",
+                        config.provider, config.model, status, latency_ms,
+                        usage.get("total_tokens", "n/a"),
+                    )
+                    if reply:
+                        return reply
                     logger.error(
-                        "AI response was not valid JSON (provider=%s model=%s status=%s)",
-                        config.provider, config.model, status,
+                        "AI response had no usable content (provider=%s model=%s)",
+                        config.provider, config.model,
                     )
                     return GENERIC_ERROR_MESSAGE
 
-                reply = _extract_reply_text(payload)
-                usage = payload.get("usage") or {}
-                logger.info(
-                    "AI request ok (provider=%s model=%s status=%s latency_ms=%s tokens=%s)",
-                    config.provider, config.model, status, latency_ms,
-                    usage.get("total_tokens", "n/a"),
-                )
-                if reply:
-                    return reply
+                # Non-200 responses. Do NOT log the raw response body — it's an
+                # untrusted upstream payload that may echo back sensitive request
+                # data (e.g. auth context via some proxies); log only metadata.
                 logger.error(
-                    "AI response had no usable content (provider=%s model=%s)",
-                    config.provider, config.model,
+                    "AI request failed (provider=%s model=%s status=%s latency_ms=%s attempt=%s/%s)",
+                    config.provider, config.model, status, latency_ms, attempt, attempts,
+                )
+
+                if status in (401, 403):
+                    return "⚠️ AI Assistant is misconfigured (authentication error). Please contact the bot owner."
+                if status == 404:
+                    return "⚠️ AI Assistant model/endpoint not found. Please contact the bot owner."
+                if status == 429:
+                    last_error_message = RATE_LIMIT_MESSAGE
+                elif status in (500, 502, 503, 504):
+                    last_error_message = GENERIC_ERROR_MESSAGE
+                else:
+                    # Other 4xx errors are not worth retrying.
+                    return GENERIC_ERROR_MESSAGE
+
+            except httpx.TimeoutException:
+                latency_ms = round((time.monotonic() - start) * 1000)
+                logger.error(
+                    "AI request timed out (provider=%s model=%s latency_ms=%s attempt=%s/%s)",
+                    config.provider, config.model, latency_ms, attempt, attempts,
+                )
+                last_error_message = GENERIC_ERROR_MESSAGE
+
+            except httpx.ConnectError as e:
+                logger.error(
+                    "AI request connection/DNS failure (provider=%s model=%s attempt=%s/%s): %s",
+                    config.provider, config.model, attempt, attempts, e,
+                )
+                last_error_message = GENERIC_ERROR_MESSAGE
+
+            except httpx.RequestError as e:
+                # Covers SSL errors, network disconnects, and any other transport-level issue.
+                logger.error(
+                    "AI request transport error (provider=%s model=%s attempt=%s/%s): %s",
+                    config.provider, config.model, attempt, attempts, e,
+                )
+                last_error_message = GENERIC_ERROR_MESSAGE
+
+            except Exception as e:  # noqa: BLE001 - never let AI failures crash the bot
+                logger.exception(
+                    "Unexpected AI client error (provider=%s model=%s attempt=%s/%s): %s",
+                    config.provider, config.model, attempt, attempts, e,
                 )
                 return GENERIC_ERROR_MESSAGE
 
-            # Non-200 responses. Do NOT log the raw response body — it's an
-            # untrusted upstream payload that may echo back sensitive request
-            # data (e.g. auth context via some proxies); log only metadata.
-            logger.error(
-                "AI request failed (provider=%s model=%s status=%s latency_ms=%s attempt=%s/%s)",
-                config.provider, config.model, status, latency_ms, attempt, attempts,
-            )
-
-            if status in (401, 403):
-                return "⚠️ AI Assistant is misconfigured (authentication error). Please contact the bot owner."
-            if status == 404:
-                return "⚠️ AI Assistant model/endpoint not found. Please contact the bot owner."
-            if status == 429:
-                last_error_message = RATE_LIMIT_MESSAGE
-            elif status in (500, 502, 503, 504):
-                last_error_message = GENERIC_ERROR_MESSAGE
-            else:
-                # Other 4xx errors are not worth retrying.
-                return GENERIC_ERROR_MESSAGE
-
-        except httpx.TimeoutException:
-            latency_ms = round((time.monotonic() - start) * 1000)
-            logger.error(
-                "AI request timed out (provider=%s model=%s latency_ms=%s attempt=%s/%s)",
-                config.provider, config.model, latency_ms, attempt, attempts,
-            )
-            last_error_message = GENERIC_ERROR_MESSAGE
-
-        except httpx.ConnectError as e:
-            logger.error(
-                "AI request connection/DNS failure (provider=%s model=%s attempt=%s/%s): %s",
-                config.provider, config.model, attempt, attempts, e,
-            )
-            last_error_message = GENERIC_ERROR_MESSAGE
-
-        except httpx.RequestError as e:
-            # Covers SSL errors, network disconnects, and any other transport-level issue.
-            logger.error(
-                "AI request transport error (provider=%s model=%s attempt=%s/%s): %s",
-                config.provider, config.model, attempt, attempts, e,
-            )
-            last_error_message = GENERIC_ERROR_MESSAGE
-
-        except Exception as e:  # noqa: BLE001 - never let AI failures crash the bot
-            logger.exception(
-                "Unexpected AI client error (provider=%s model=%s attempt=%s/%s): %s",
-                config.provider, config.model, attempt, attempts, e,
-            )
-            return GENERIC_ERROR_MESSAGE
-
-        if attempt < attempts:
-            await asyncio.sleep(min(2 ** (attempt - 1), 8))
+            if attempt < attempts:
+                await asyncio.sleep(min(2 ** (attempt - 1), 8))
 
     return last_error_message
 
 
 async def close_ai_client() -> None:
-    """Close the pooled HTTP client. Optional — call on process shutdown."""
-    global _client
-    if _client is not None and not _client.is_closed:
-        await _client.aclose()
+    """No-op kept for backward compatibility. Each generate_ai_response()
+    call now opens and closes its own HTTP client (see _new_http_client),
+    so there is no shared client left open to close."""
+    return None
